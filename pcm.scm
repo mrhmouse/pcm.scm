@@ -24,6 +24,11 @@
 
 ;;; utility functions
 
+(define (patent-val base number-of-equal-divisions ratio)
+  "Get the patent val for the given RATIO in the temperament
+given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
+  (log ratio (expt base (/ number-of-equal-divisions))))
+
 (define (cubic unit)
   (- 1 (expt (- 1 unit) 3)))
 
