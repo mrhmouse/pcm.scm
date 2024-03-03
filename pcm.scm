@@ -360,7 +360,7 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
   (groove 1)
   (tempo 60)
   (root 440)
-  (voice #f)
+  (voice sin)
   (thunk))
 
 (define (render-to-file filename thunk)
