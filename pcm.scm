@@ -204,6 +204,11 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 (define sample-writer
   (make-parameter #f))
 
+(define (write-sample sample)
+  (let ((writer (sample-writer)))
+    (when (procedure? writer)
+      (writer sample))))
+
 (define tempo
   (make-parameter 60))
 
@@ -342,8 +347,7 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 			      ((voice)
 			       (* note (root) 2 roughly-pi
 				  (/ sample sample-rate)))))
-			 (when (sample-writer)
-			   ((sample-writer) sample-value))))))
+                         (write-sample sample-value)))))
 		 (filter
 		  number?
 		  (if (list? note-or-chord)
