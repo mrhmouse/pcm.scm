@@ -24,13 +24,88 @@
 
 ;;; utility functions
 
-(define (patent-val base number-of-equal-divisions ratio)
-  "Get the patent val for the given RATIO in the temperament
+(define (interval-reduce interval equivalence)
+  (cond ((negative? equivalence)
+	 (interval-reduce interval (- equivalence)))
+	((< equivalence 1)
+	 (interval-reduce interval (/ equivalence)))
+	((< interval 1)
+	 (interval-reduce (* interval equivalence) equivalence))
+	((>= interval equivalence)
+	 (interval-reduce (/ interval equivalence) equivalence))
+	(else interval)))
+
+(define (interval-balance interval)
+  (if (>= interval 1)
+      interval
+      (/ interval)))
+
+(define (count-factor interval factor)
+  (let loop ((n 0) (i interval))
+    (if (zero? (modulo i factor))
+	(loop (+ 1 n) (/ i factor))
+	n)))
+
+(define (factorize interval factors)
+  (let ((n (numerator interval))
+	(d (denominator interval)))
+    (map (lambda (factor)
+	   (- (count-factor n factor)
+	      (count-factor d factor)))
+	 factors)))
+
+(define radius-of-tolerance
+  (make-parameter 65/63))
+
+(define fjs-note-names
+  (make-parameter '#(F C G D A E B)))
+
+(define (fifth-shift interval)
+  (let ((p (interval-reduce interval 2)))
+    (let loop ((k 0))
+      (cond ((< (interval-balance (/ p (interval-reduce (expt 3 k) 2)))
+		(radius-of-tolerance))
+	     k)
+	    ((zero? k) (loop 1))
+	    ((negative? k) (loop (+ 1 (- k))))
+	    (else (loop (- k)))))))
+
+(define (formal-comma p k)
+  (let ((comma (interval-reduce (/ p (expt 3 k)) 2)))
+    (if (< comma (sqrt 2))
+	comma
+	(/ comma 2))))
+
+(define (fjs-accidental k)
+  (floor (/ k (vector-length (fjs-note-names)))))
+
+(define (interval->fjs p)
+  (let ((k (fifth-shift p)))
+    (list (vector-ref (fjs-note-names)
+		      (modulo (+ 1 k)
+			      (vector-length (fjs-note-names))))
+	  (fjs-accidental k)
+	  (formal-comma p k))))
+
+(define (fjs->interval name accidental comma)
+  (let* ((i (- (vector-index (fjs-note-names) name) 1))
+	 (k (+ i (* accidental (vector-length (fjs-note-names))))))
+    (* comma (interval-reduce (expt 3 k) 2))))
+
+(define (edi-patent-val base number-of-equal-divisions interval)
+  "Get the patent val for the given INTERVAL in the temperament
 given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
-  (log ratio (expt base (/ number-of-equal-divisions))))
+  (if (zero? interval) 0
+      (log interval (expt base (/ number-of-equal-divisions)))))
 
 (define (cubic unit)
   (- 1 (expt (- 1 unit) 3)))
+
+(define (vector-index vector item)
+  (let loop ((i 0))
+    (cond ((>= i (vector-length vector)) #f)
+	  ((eq? item (vector-ref vector i)) i)
+	  (else (loop (+ 1 i))))))
 
 (define (vector-fold-left kons knil . vectors)
   (let ((n (apply min (map vector-length vectors))))
@@ -49,16 +124,30 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 	(vector-map (lambda (x) (* n (/ x 2 amplitude-max)))
 		    vector))))
 
-(define (interval-reduce interval equivalence)
-  (cond ((negative? equivalence)
-	 (interval-reduce interval (- equivalence)))
-	((< equivalence 1)
-	 (interval-reduce interval (/ equivalence)))
-	((< interval 1)
-	 (interval-reduce (* interval equivalence) equivalence))
-	((> interval equivalence)
-	 (interval-reduce (/ interval equivalence) equivalence))
-	(else interval)))
+(define (ensure-list item)
+  (if (list? item) item (list item)))
+
+(define (retune-edi play b n)
+  (lambda notes-or-chords
+    (->> notes-or-chords
+	 (map ensure-list)
+	 (map (lambda->>
+	       (map (lambda (note)
+		      (if (number? note)
+			  (expt b (/ (round (edi-patent-val b n note)) n))
+			  note)))))
+	 (apply play))))
+
+(define (index-edi play b n)
+  (lambda notes-or-chords
+    (->> notes-or-chords
+	 (map ensure-list)
+	 (map (lambda->>
+	       (map (lambda (note)
+		      (if (number? note)
+			  (expt b (/ note n))
+			  note)))))
+	 (apply play))))
 
 ;;; constants and parameters
 
