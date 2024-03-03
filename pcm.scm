@@ -368,21 +368,28 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
   (thunk))
 
 (define (render-to-file filename thunk)
-  (sample-writer #f)
-  (render thunk)
-  (let ((buffer (make-vector (+ 1 (exact (ceiling (tape-tail)))) 0)))
-    (sample-writer
-     (lambda (sample)
-       (let* ((tape-pos (exact (floor (tape-head))))
-	      (existing-sample (vector-ref buffer tape-pos)))
-	 (vector-set! buffer tape-pos (+ existing-sample sample)))))
-    (render thunk)
+  (let ((buffer (make-vector sample-rate 0)))
+    (parameterize
+        ((sample-writer
+          (lambda (sample)
+            (let ((tape-pos (exact (floor (tape-head)))))
+              (when (>= tape-pos (vector-length buffer))
+                (set! buffer
+                      (let ((new-buffer (make-vector (* 2 tape-pos) 0)))
+                        (do ((i 0 (+ i 1)))
+                            ((= i (vector-length buffer)) new-buffer)
+                          (vector-set! new-buffer i
+                                       (vector-ref buffer i))))))
+              (vector-set! buffer tape-pos
+                           (+ sample (vector-ref buffer tape-pos)))))))
+      (render thunk))
     (call-with-port (open-file-output-port filename (file-options no-fail))
-      (lambda (output)
-	(vector-for-each
-	 (lambda (sample)
-	   (let ((s (exact (round (* #xFFFF sample)))))
-	     (put-u8 output (bitwise-and #xFF s))
-	     (put-u8 output (bitwise-arithmetic-shift (bitwise-and #xFF00 s) -8))))
-	 (vector-normalize 2/3 buffer))))
-    filename))
+        (lambda (output)
+          (let ((buffer (vector-normalize 2/3 buffer))
+                (tail (+ 1 (exact (ceiling (tape-tail))))))
+            (do ((i 0 (+ i 1)))
+                ((= i tail))
+              (let ((s (exact (round (* #xFFFF (vector-ref buffer i))))))
+                (put-u8 output (bitwise-and #xFF s))
+                (put-u8 output (bitwise-arithmetic-shift (bitwise-and #xFF00 s) -8))))))))
+  filename)
