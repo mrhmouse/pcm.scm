@@ -25,6 +25,7 @@
 ;;; utility functions
 
 (define (interval-reduce interval equivalence)
+  "Reduce the given interval to be within 1/1 and the equivalence"
   (cond ((negative? equivalence)
 	 (interval-reduce interval (- equivalence)))
 	((< equivalence 1)
@@ -36,17 +37,20 @@
 	(else interval)))
 
 (define (interval-balance interval)
+  "Ensure the given interval is smaller than or equal to 1"
   (if (>= interval 1)
       interval
       (/ interval)))
 
 (define (count-factor interval factor)
+  "Count the times factor appears in interval as an exponent"
   (let loop ((n 0) (i interval))
     (if (zero? (modulo i factor))
 	(loop (+ 1 n) (/ i factor))
 	n)))
 
 (define (factorize interval factors)
+  "Given a list of factors, return the list of their counts in interval"
   (let ((n (numerator interval))
 	(d (denominator interval)))
     (map (lambda (factor)
@@ -61,6 +65,7 @@
   (make-parameter '#(F C G D A E B)))
 
 (define (fifth-shift interval)
+  "Find the 3-limit height of interval, in 3/2s"
   (let ((p (interval-reduce interval 2)))
     (let loop ((k 0))
       (cond ((< (interval-balance (/ p (interval-reduce (expt 3 k) 2)))
@@ -71,15 +76,18 @@
 	    (else (loop (- k)))))))
 
 (define (formal-comma p k)
+  "Get the FJS comma for interval p with fifth-shift k"
   (let ((comma (interval-reduce (/ p (expt 3 k)) 2)))
     (if (< comma (sqrt 2))
 	comma
 	(/ comma 2))))
 
 (define (fjs-accidental k)
+  "Get the number of accidentals for the given fifth-shift k"
   (floor (/ k (vector-length (fjs-note-names)))))
 
 (define (interval->fjs p)
+  "Convert the interval p to FJS notation"
   (let ((k (fifth-shift p)))
     (list (vector-ref (fjs-note-names)
 		      (modulo (+ 1 k)
@@ -88,6 +96,7 @@
 	  (formal-comma p k))))
 
 (define (fjs->interval name accidental comma)
+  "Convert the interval given by (name accidental comma) from FJS to a number"
   (let* ((i (- (vector-index (fjs-note-names) name) 1))
 	 (k (+ i (* accidental (vector-length (fjs-note-names))))))
     (* comma (interval-reduce (expt 3 k) 2))))
@@ -99,9 +108,11 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
       (log interval (expt base (/ number-of-equal-divisions)))))
 
 (define (cubic unit)
+  "Convert a linear unit (0, 1) to a cubic unit (0, 1)"
   (- 1 (expt (- 1 unit) 3)))
 
 (define (vector-index vector item)
+  "Find the index where an item appears in a vector"
   (let loop ((i 0))
     (cond ((>= i (vector-length vector)) #f)
 	  ((eq? item (vector-ref vector i)) i)
@@ -115,6 +126,7 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 	((= i n) result))))
 
 (define (vector-normalize n vector)
+  "Normalize numbers in vector so they're between 0 and ±n"
   (let ((amplitude-max
 	 (vector-fold-left (lambda (a b) (max (abs a) (abs b)))
 			   0
@@ -125,9 +137,11 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 		    vector))))
 
 (define (ensure-list item)
+  "If item is a list, return it. Otherwise, wrap it in a list"
   (if (list? item) item (list item)))
 
 (define (retune-edi play b n)
+  "Wrap the play function, retuning values to fit into the EDI given by base b and number of divisions n"
   (lambda notes-or-chords
     (->> notes-or-chords
 	 (map ensure-list)
@@ -139,6 +153,7 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 	 (apply play))))
 
 (define (index-edi play b n)
+  "Wrap the play function, indexing values into the EDI given by base b and number of divisions n"
   (lambda notes-or-chords
     (->> notes-or-chords
 	 (map ensure-list)
