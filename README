@@ -1,0 +1,1 @@
+This repository contains a Scheme library for writing music programmatically, `pcm.scm`, and a song database which demonstrates that library, `song.pcm`
