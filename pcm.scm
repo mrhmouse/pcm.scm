@@ -2,10 +2,10 @@
   (export pipe> pipe>> lambda> lambda>>
           while repeat
           flat-map cross-join
-          harmonics rhythm
+          harmonics unison rhythm
           quick-reduce interval-reduce interval-balance
           count-factor factorize prime? factors
-          radius-of-tolerance fjs-note-names
+          radius-of-tolerance fjs-note-names fractran
           fifth-shift formal-comma fjs-accidental
           interval->fjs fjs->interval edi-patent-val
           cubic vector-index vector-fold-left
@@ -20,13 +20,13 @@
           harmonic-series-segment edi
           sample-rate roughly-pi render-tail
           beat-position beat-counter tape-tail
-          tape-head rewind voice sample-writer
+          tape-head rewind voice
           tempo groove beat-length root modulate
           square sawtooth triangle noise
           offset volume adsr detune hz add sub
-          am fm pm rm play render render-to-file
-          define-song song-database render-song)
-
+          distort
+          am fm pm rm play rest
+          define-song song-database render-pcm16 render-musicxml)
   (import (chezscheme))
 
 ;;; syntax
@@ -129,6 +129,12 @@
                     (apply add))
             (/ (length ratios))))
 
+  (define (unison op . ratios)
+    (volume (pipe>> ratios
+                    (map (lambda (r) (detune op r)))
+                    (apply add))
+            (/ (length ratios))))
+
   (define (rhythm play . voices)
     (for-each (lambda (v)
                 (if v
@@ -137,13 +143,18 @@
                     (play #f)))
               voices))
 
+  (define (rest duration)
+    (parameterize ((groove duration))
+      (play #f)))
+
   (define (quick-reduce a r)
     (let ((n (log a r)))
       (expt r (- n (floor n)))))
 
   (define (interval-reduce interval equivalence)
     "Reduce the given interval to be within 1/1 and the equivalence"
-    (cond ((negative? equivalence)
+    (cond ((zero? interval) #f)
+          ((negative? equivalence)
 	   (interval-reduce interval (- equivalence)))
 	  ((< equivalence 1)
 	   (interval-reduce interval (/ equivalence)))
@@ -168,12 +179,23 @@
 
   (define (factorize interval factors)
     "Given a list of factors, return the list of their counts in interval"
-    (let ((n (numerator interval))
-	  (d (denominator interval)))
-      (map (lambda (factor)
-	     (- (count-factor n factor)
-	        (count-factor d factor)))
-	   factors)))
+    (and (not (zero? interval))
+         (let ((n (numerator interval))
+	       (d (denominator interval)))
+           (map (lambda (factor)
+	          (- (count-factor n factor)
+	             (count-factor d factor)))
+	        factors))))
+
+  (define (fractran state . program)
+    (let run ((state state) (this-pass program))
+      (if (or (zero? state)
+              (null? this-pass))
+          state
+          (let ((next-state (* (car this-pass) state)))
+            (if (integer? next-state)
+                (run next-state program)
+                (run state (cdr this-pass)))))))
 
   (define (prime? n)
     "Determine whether n is prime or composite"
@@ -191,7 +213,7 @@
                            (zero? (mod n i)))))))
 
   (define radius-of-tolerance
-    (make-parameter 65/63))
+    (make-parameter (sqrt 256/243)))
 
   (define fjs-note-names
     (make-parameter '#(F C G D A E B)))
@@ -361,14 +383,12 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
            (equave (vector-ref scale (- length 1))))
       (let loop ((index index)
                  (note 1))
-        (cond ((not (number? index))
-               index)
+        (cond ((not (number? index)) index)
               ((negative? index)
-               (loop (+ index length)
+               (loop (+ index length -1)
                      (/ note equave)))
-              ((zero? index) note)
               ((>= index length)
-               (loop (- index length)
+               (loop (- index length -1)
                      (* note equave)))
               (else
                (* note (vector-ref scale index)))))))
@@ -484,7 +504,7 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 
   (define (rotate-scale degree scale)
     (let* ((scale-length (vector-length scale))
-           (rotation (vector-ref scale degree))
+           (rotation (index-note-to-scale degree scale))
            (period (vector-ref scale (sub1 scale-length)))
            (new-scale (make-vector scale-length)))
       (do ((i 0 (add1 i)))
@@ -549,8 +569,24 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
   (define voice
     (make-parameter #f))
 
-  (define sample-writer
+  (define tape-buffer
     (make-parameter #f))
+
+  (define (write-sample sample)
+    (let ((buffer (tape-buffer)))
+      (and buffer
+           (let ((tape-pos (exact (floor (tape-head))))
+                 (old-length (vector-length buffer)))
+             (when (>= tape-pos old-length)
+               (set! buffer
+                     (let ((new-buffer (make-vector (* 2 tape-pos) 0)))
+                       (do ((i 0 (+ i 1)))
+                           ((>= i old-length) new-buffer)
+                         (vector-set! new-buffer i (vector-ref buffer i)))))
+               (tape-buffer buffer))
+             (vector-set! buffer
+                          tape-pos
+                          (+ sample (vector-ref buffer tape-pos)))))))
 
   (define tempo
     (make-parameter 60))
@@ -670,9 +706,16 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 	         (carrier i)
 	         operators)))
 
+  (define (distort carrier . distortions)
+    (lambda (i)
+      (fold-left (lambda (signal distortion)
+                   (distortion signal))
+                 (carrier i)
+                 distortions)))
+
 ;;; rendering
 
-  (define (play . notes-or-chords)
+  (define (play-to-tape . notes-or-chords)
     (for-each (lambda (note-or-chord)
 	        (let* ((tape-start (tape-head))
 		       (beat-samples
@@ -682,10 +725,8 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 		  (for-each
                    (let ((v (voice))
                          (r (root))
-                         (s (sample-rate))
-                         (write-sample (sample-writer)))
-                     (if (and (procedure? v)
-                              (procedure? write-sample))
+                         (s (sample-rate)))
+                     (if (procedure? v)
                          (lambda (note)
                            (do ((sample 0 (+ 1 sample)))
 		               ((>= sample tail-samples))
@@ -705,7 +746,62 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
 		  (tape-head (+ tape-start beat-samples))))
 	      notes-or-chords))
 
-  (define (render thunk)
+  (define (fjs->musicxml fjs)
+    (let ((name (car fjs))
+          (accidental (cadr fjs))
+          (formal-comma (caddr fjs))
+          (original-note (cadddr fjs)))
+      `(pitch (step ,name)
+              (alter ,(* (if (negative? accidental) -1 1)
+                         (* 1/100 (cents (expt formal-comma (abs accidental))))))
+              (octave ,(+ 4 (exact (floor (log original-note 2))))))))
+
+  (define (musicxml->string xml)
+    (cond ((list? xml)
+           (format "<~a>~a</~a>"
+                   (car xml)
+                   (fold-left string-append "" (map musicxml->string (cdr xml)))
+                   (car xml)))
+          (else
+           (format "~a" xml))))
+
+  (define musicxml-output-port
+    (make-parameter #f))
+
+  (define (beat-length->musicxml)
+    `(duration ,(inexact (beat-length))))
+
+  (define (play-to-musicxml . notes-or-chords)
+    (let ((active-voice #f))
+      (for-each (lambda (chord)
+                  (let ((notes (filter number? chord)))
+                    (if (null? notes)
+                        (format (musicxml-output-port) "<rest />")
+                        (begin (format (musicxml-output-port) "~a"
+                                       (musicxml->string
+                                        (list 'note
+                                              (beat-length->musicxml)
+                                              (fjs->musicxml (interval->fjs (car notes))))))
+                               (for-each (lambda (note)
+                                           (format (musicxml-output-port) "~a "
+                                                   (musicxml->string
+                                                    (list 'note
+                                                          (beat-length->musicxml)
+                                                          (cons 'pitch
+                                                                (cons '(chord)
+                                                                      (cdr (fjs->musicxml
+                                                                            (interval->fjs note)))))))))
+                                         (cdr notes)))))
+                  (beat-counter (+ 1 (beat-counter))))
+                (map ensure-list notes-or-chords))))
+
+  (define play-mode
+    (make-parameter play-to-tape))
+
+  (define (play . notes-or-chords)
+    (apply (play-mode) notes-or-chords))
+
+  (define (reset-and-run-song thunk)
     (tape-head 0)
     (tape-tail 0)
     (render-tail 0)
@@ -714,33 +810,6 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
     (root 440)
     (voice sin)
     (thunk))
-
-  (define (render-to-file filename thunk)
-    (let ((buffer (make-vector (* 3 60 (sample-rate)) 0)))
-      (parameterize
-          ((sample-writer
-            (lambda (sample)
-              (let ((tape-pos (exact (floor (tape-head))))
-                    (old-length (vector-length buffer)))
-                (when (>= tape-pos old-length)
-                  (set! buffer
-                        (let ((new-buffer (make-vector (* 2 tape-pos) 0)))
-                          (do ((i 0 (+ i 1)))
-                              ((= i (- old-length 1)) new-buffer)
-                            (vector-set! new-buffer i (vector-ref buffer i))))))
-                (vector-set! buffer tape-pos
-                             (+ sample (vector-ref buffer tape-pos)))))))
-        (render thunk))
-      (call-with-port (open-file-output-port filename (file-options no-fail))
-        (lambda (output)
-          (let ((buffer (vector-normalize 2/3 buffer))
-                (tail (exact (ceiling (tape-tail)))))
-            (do ((i 0 (+ i 1)))
-                ((= i tail))
-              (let ((s (exact (round (* #xFFFF (vector-ref buffer i))))))
-                (put-u8 output (bitwise-and #xFF s))
-                (put-u8 output (bitwise-arithmetic-shift (bitwise-and #xFF00 s) -8))))))))
-    filename)
 
   ;;; songs
 
@@ -755,10 +824,36 @@ given by dividing BASE into NUMBER-OF-EQUAL-DIVISIONS"
         name
         (lambda () body ...)))))
 
-  (define (render-song name)
+  (define (render-pcm16 name)
     (format #t "Rendering ~a...~%" name)
     (format #t "Done!~%Output: ~a~%"
-            (render-to-file
-             (format "render/~a.pcm16" name)
-             (hashtable-ref song-database name #f)))
-    (values)))
+            (let ((filename (format "render/~a.pcm16" name))
+                  (thunk (hashtable-ref song-database name #f)))
+              (parameterize ((tape-buffer (make-vector (* 3 60 (sample-rate)) 0))
+                             (play-mode play-to-tape))
+                (reset-and-run-song thunk)
+                (call-with-port (open-file-output-port filename (file-options no-fail))
+                  (lambda (output)
+                    (let ((buffer (vector-normalize 2/3 (tape-buffer)))
+                          (tail (exact (ceiling (tape-tail)))))
+                      (do ((i 0 (+ i 1)))
+                          ((= i (min tail (vector-length buffer))))
+                        (let ((s (exact (round (* #xFFFF (vector-ref buffer i))))))
+                          (put-u8 output (bitwise-and #xFF s))
+                          (put-u8 output (bitwise-arithmetic-shift (bitwise-and #xFF00 s) -8))))))))))
+    (values))
+
+  (define (render-musicxml name)
+    (let ((filename (format "render/~a.xml" name))
+          (thunk (hashtable-ref song-database name #f)))
+      (parameterize ((play-mode play-to-musicxml)
+                     (musicxml-output-port (open-file-output-port filename
+                                                                  (file-options no-fail)
+                                                                  (buffer-mode none)
+                                                                  (native-transcoder))))
+        (format (musicxml-output-port)
+                "<score-partwise><part><measure>~%")
+        (reset-and-run-song thunk)
+        (format (musicxml-output-port)
+                "~%</measure></part></score-partwise>")
+        (close-output-port (musicxml-output-port))))))
