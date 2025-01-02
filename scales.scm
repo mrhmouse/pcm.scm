@@ -73,6 +73,8 @@
   (mos (l s) (2 1)
        l l s l l s l s))
 (define 5-limit-minor '#(1 10/9 6/5 4/3 3/2 8/5 9/5 2/1))
+(define 5-limit-minor<3/2>
+  '#(1 10/9 6/5 4/3 3/2))
 (define 5-limit-spicy '#(1 16/15 5/4 4/3 3/2 8/5 15/8 2/1))
 (define 7-limit-thing '#(1 8/7 9/7 4/3 3/2 49/32 49/27 2/1))
 (define mos-5L5s-9/4-equivalent-ultrasoft
@@ -85,3 +87,15 @@
 (define 11-limit-thing
   (pipe>> (rank-2-temperament 11 3/2 24)
           (vector-map inexact)))
+(define 16/15-guitar
+  (let ((strings '(1 3/2 15/8 5/2 3/1))
+        (frets (map (lambda (i) (expt 16/15 i))
+                    (iota 23))))
+    (pipe>> (map (lambda (fret)
+                   (map (lambda (string)
+                          (* fret string))
+                        strings))
+                 frets)
+            (fold-left append '())
+            (sort <)
+            (list->vector))))
