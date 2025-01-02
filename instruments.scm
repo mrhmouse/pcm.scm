@@ -48,6 +48,12 @@
          (hz 5300)
          (volume 1/16)))
 
+(define high-hat2
+  (pipe> noise
+         (adsr 1/8 1/2 0 0)
+         (hz 14300)
+         (volume 1/16)))
+
 (define arp-lead
   (pipe> (harmonics 2 4 5 6 8)
          (volume 2/3)
@@ -65,6 +71,10 @@
                     (volume 1/8)
                     (offset 1/2)))
          (volume 1/12)))
+
+(define sub-bass
+  (pipe> sin (detune 1/4)
+         (adsr 1/8 1/2 4/5 1/9)))
 
 (define pluck-bass
   (pipe> (harmonics 4 5 6)
@@ -718,3 +728,57 @@
 	            (adsr 1/64 1/8 0 0)))
          (adsr 1/64 1/4 0 0)
          (volume 1/2)))
+
+(define v/harm
+  (pipe> sin
+         (fm (pipe> (unison sin
+                            1 2 1/2
+                            81/80 80/81
+                            121/120 120/121
+                            323/322 322/323)
+                    (volume 1/256)
+                    (offset 1))
+             (pipe> sin
+                    (hz 1/3)
+                    (volume 1/256)
+                    (offset 1)))
+         (am (pipe> sin
+                    (hz 1/3)
+                    (volume 1/256)
+                    (offset 1)))
+         (adsr 1/16 1/8 5/8 4)))
+
+(define v/lead
+  (pipe> sin
+         (detune 2)
+         (adsr 1/2 1/2 1/2 1/16)
+         (am (pipe> sin (volume 1/3) (offset 1)
+                    (hz 3)))
+         (fm (pipe> (harmonics 1 3 5 7 9 11)
+                    (volume 1/1024)
+                    (adsr 1 0 1 4)
+                    (offset 1))
+             (pipe> sin (volume 1/81) (offset 1)
+                    (hz 1/3)))
+         (volume 1/3)))
+
+(define v/pluck
+  (pipe> sin
+         (detune 2)
+         (adsr 1/64 1/8 1/8 1/16)
+         (am (pipe> sin (volume 1/3) (offset 1)
+                    (hz 3)))
+         (fm (pipe> (harmonics 1 3 5 7 9 11)
+                    (volume 1/1024)
+                    (adsr 1 0 1 4)
+                    (offset 1))
+             (pipe> sin (volume 1/81) (offset 1)
+                    (hz 1/3)))
+         (volume 3/2)))
+
+(define v/kick
+  (pipe> kick-drum
+         (add (pipe> sin
+                     (detune 1/8)
+                     (adsr 1/32 31/32 0 0)))
+         (volume 16)))
